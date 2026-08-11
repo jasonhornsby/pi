@@ -23,7 +23,7 @@ import { filterAndSortSessions, hasSessionName, type NameFilter, type SortMode }
 
 type SessionScope = "current" | "all";
 
-function shortenPath(path: string): string {
+export function shortenPath(path: string): string {
 	const home = os.homedir();
 	if (!path) return path;
 	if (path.startsWith(home)) {
@@ -32,7 +32,7 @@ function shortenPath(path: string): string {
 	return path;
 }
 
-function formatSessionDate(date: Date): string {
+export function formatSessionDate(date: Date): string {
 	const now = new Date();
 	const diffMs = now.getTime() - date.getTime();
 	const diffMins = Math.floor(diffMs / 60000);
@@ -642,7 +642,7 @@ type SessionsLoader = (onProgress?: SessionListProgress) => Promise<SessionInfo[
 /**
  * Delete a session file, trying the `trash` CLI first, then falling back to unlink
  */
-async function deleteSessionFile(
+export async function deleteSessionFile(
 	sessionPath: string,
 ): Promise<{ ok: boolean; method: "trash" | "unlink"; error?: string }> {
 	// Try `trash` first (if installed)

@@ -41,6 +41,7 @@ interface SessionEntry {
 export interface SessionSummary {
 	id: string;
 	name: string;
+	isNamed: boolean;
 	cwd: string;
 	sessionFile?: string;
 	isActive: boolean;
@@ -127,6 +128,7 @@ export class MultiplexerRuntime extends AgentSessionRuntime {
 				(entry.session.sessionFile
 					? basename(entry.session.sessionFile).replace(/\.jsonl$/, "")
 					: `session ${index + 1}`),
+			isNamed: entry.session.sessionName !== undefined,
 			cwd: entry.services.cwd,
 			sessionFile: entry.session.sessionFile ?? undefined,
 			isActive: entry.session.sessionId === this.activeId,
@@ -150,8 +152,18 @@ export class MultiplexerRuntime extends AgentSessionRuntime {
 		return { cancelled: false };
 	}
 
+	/** Rename an open session by id. Persists a session_info entry and emits the rename event. */
+	renameSession(id: string, name: string): { ok: boolean; error?: string } {
+		const entry = this.sessions.get(id);
+		if (!entry) {
+			return { ok: false, error: "No open session with that id" };
+		}
+		entry.session.setSessionName(name);
+		return { ok: true };
+	}
+
 	/** Close an open session. The last session can never be closed. */
-	async closeSession(id: string): Promise<{ cancelled: boolean }> {
+	async closeSession(id: string, options: { skipInvalidate?: boolean } = {}): Promise<{ cancelled: boolean }> {
 		const entry = this.sessions.get(id);
 		if (!entry) {
 			return { cancelled: false };
@@ -165,7 +177,12 @@ export class MultiplexerRuntime extends AgentSessionRuntime {
 			reason: "quit",
 			targetSessionFile: this.session.sessionFile,
 		});
-		this.beforeInvalidate?.();
+		// Skip the UI invalidation when the caller is managing sessions from an
+		// overlay (e.g. the /sessions picker): resetExtensionUI() would hide the
+		// overlay while its custom() promise is still pending.
+		if (!options.skipInvalidate) {
+			this.beforeInvalidate?.();
+		}
 		entry.session.dispose();
 		this.sessions.delete(id);
 		if (wasActive) {

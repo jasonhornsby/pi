@@ -66,6 +66,19 @@ export class CustomEditor extends Editor {
 			// Fall through to editor handling for delete-char-forward when not empty
 		}
 
+		// Session manager (left arrow) - only when editor is empty, so cursor
+		// movement with left-arrow still works while typing.
+		if (this.keybindings.matches(data, "app.session.manager")) {
+			if (this.getText().length === 0) {
+				const handler = this.actionHandlers.get("app.session.manager");
+				if (handler) {
+					handler();
+					return;
+				}
+			}
+			// Fall through to editor handling for cursor-left when not empty
+		}
+
 		// Explicit history bindings take precedence over app actions while the editor is focused.
 		// This lets users bind Ctrl+P even though it cycles models by default.
 		if (

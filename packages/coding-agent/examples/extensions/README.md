@@ -121,6 +121,7 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 | Extension | Description |
 |-----------|-------------|
 | `session-name.ts` | Name sessions for the session selector via `setSessionName` |
+| `session-namer.ts` | Agent-driven session naming tool with a configurable convention (`set_session_name`) |
 | `bookmark.ts` | Bookmark entries with labels for `/tree` navigation via `setLabel` |
 
 ### Custom Providers
