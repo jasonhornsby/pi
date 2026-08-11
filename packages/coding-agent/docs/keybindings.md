@@ -129,6 +129,7 @@ This routing remains configurable through the ordinary action bindings. For exam
 | `app.session.tree` | *(none)* | Open session tree navigator (`/tree`) |
 | `app.session.fork` | *(none)* | Fork current session (`/fork`) |
 | `app.session.resume` | *(none)* | Open session resume picker (`/resume`) |
+| `app.session.manager` | `left` | Open session manager (`/sessions`, when editor is empty) |
 | `app.session.togglePath` | `ctrl+p` | Toggle path display |
 | `app.session.toggleSort` | `ctrl+s` | Toggle sort mode |
 | `app.session.toggleNamedFilter` | `ctrl+n` | Toggle named-only filter |

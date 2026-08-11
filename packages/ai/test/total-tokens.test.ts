@@ -225,6 +225,8 @@ describe("totalTokens field", () => {
 			"gemini-2.5-flash - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
 			async () => {
+				// gemini-2.0-flash was removed from the model catalog; use the closest
+				// current equivalent.
 				const llm = getModel("google", "gemini-2.5-flash");
 
 				console.log(`\nGoogle / ${llm.id}:`);

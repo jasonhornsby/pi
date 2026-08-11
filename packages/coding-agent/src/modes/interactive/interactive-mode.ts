@@ -99,6 +99,7 @@ import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.ts";
 import { getUsageCostBreakdown } from "../../core/usage-totals.ts";
+import { RESTART_EXIT_CODE } from "../../pi-mux/restart-extension.ts";
 import { getChangelogPath, getNewEntries, normalizeChangelogLinks, parseChangelog } from "../../utils/changelog.ts";
 import { copyToClipboard, readClipboardText } from "../../utils/clipboard.ts";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.ts";
@@ -2812,6 +2813,13 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.session.tree", () => this.showTreeSelector());
 		this.defaultEditor.onAction("app.session.fork", () => this.showUserMessageSelector());
 		this.defaultEditor.onAction("app.session.resume", () => this.showSessionSelector());
+		this.defaultEditor.onAction("app.session.manager", () => {
+			if (!this.session.extensionRunner.getCommand("sessions")) {
+				this.showStatus("Session manager is only available in --multiplex mode");
+				return;
+			}
+			void this.session.prompt("/sessions");
+		});
 
 		this.defaultEditor.onChange = (text: string) => {
 			const wasBashMode = this.isBashMode;
@@ -3791,7 +3799,9 @@ export class InteractiveMode {
 			this.themeController.disableAutoSync();
 			await this.ui.terminal.drainInput(1000);
 			this.stop();
-			process.exit(0);
+			// A /restart (exit code 42) requested before a signal arrives should still
+			// relaunch via the pi-dev wrapper rather than being cancelled by the signal.
+			process.exit(process.exitCode === RESTART_EXIT_CODE ? RESTART_EXIT_CODE : 0);
 		}
 
 		// Interactive quit (Ctrl+D, Ctrl+C, /quit, extension shutdown()). Stop the
@@ -3805,12 +3815,15 @@ export class InteractiveMode {
 		this.stop();
 		await this.runtimeHost.dispose();
 
-		const resumeCommand = formatResumeCommand(this.sessionManager);
-		if (resumeCommand) {
-			process.stdout.write(`${chalk.dim("To resume this session:")} ${resumeCommand}\n`);
+		const exitCode = process.exitCode ?? 0;
+		if (exitCode !== RESTART_EXIT_CODE) {
+			const resumeCommand = formatResumeCommand(this.sessionManager);
+			if (resumeCommand) {
+				process.stdout.write(`${chalk.dim("To resume this session:")} ${resumeCommand}\n`);
+			}
 		}
 
-		process.exit(0);
+		process.exit(exitCode);
 	}
 
 	private emergencyTerminalExit(): never {

@@ -33,7 +33,11 @@ import { createProjectTrustContext } from "./cli/project-trust.ts";
 import { selectSession } from "./cli/session-picker.ts";
 import { shouldRunFirstTimeSetup, showFirstTimeSetup, showStartupSelector } from "./cli/startup-ui.ts";
 import { APP_NAME, ENV_SESSION_DIR, expandTildePath, getAgentDir, getPackageDir, VERSION } from "./config.ts";
-import { type CreateAgentSessionRuntimeFactory, createAgentSessionRuntime } from "./core/agent-session-runtime.ts";
+import {
+	type AgentSessionRuntime,
+	type CreateAgentSessionRuntimeFactory,
+	createAgentSessionRuntime,
+} from "./core/agent-session-runtime.ts";
 import {
 	type AgentSessionRuntimeDiagnostic,
 	createAgentSessionFromServices,
@@ -64,6 +68,9 @@ import { runMigrations, showDeprecationWarnings } from "./migrations.ts";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.ts";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.ts";
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.ts";
+import { MultiplexerRuntime } from "./pi-mux/multiplexer-runtime.ts";
+import { createRestartExtension, type RestartRuntimeRef } from "./pi-mux/restart-extension.ts";
+import { createSessionsExtension } from "./pi-mux/sessions-extension.ts";
 import { isLocalPath, normalizePath, resolvePath } from "./utils/paths.ts";
 import { cleanupWindowsSelfUpdateQuarantine } from "./utils/windows-self-update.ts";
 
@@ -568,7 +575,14 @@ export interface MainOptions {
 
 export async function main(args: string[], options?: MainOptions) {
 	resetTimings();
-	const extensionFactories = [...builtInExtensions, ...(options?.extensionFactories ?? [])];
+	// pi-dev: mutable ref so the /restart extension can reach the runtime (any mode).
+	// Declared before the extension factories below so the closure captures the ref.
+	const devRuntimeRef: RestartRuntimeRef = { current: null, mode: null };
+	const extensionFactories = [
+		...builtInExtensions,
+		createRestartExtension(devRuntimeRef),
+		...(options?.extensionFactories ?? []),
+	];
 	const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.PI_OFFLINE);
 	if (offlineMode) {
 		process.env.PI_OFFLINE = "1";
@@ -705,6 +719,8 @@ export async function main(args: string[], options?: MainOptions) {
 		parsed.projectTrustOverride === undefined && !hasTrustRequiringProjectResources(sessionCwd)
 			? sessionCwd
 			: undefined;
+	// pi-mux: mutable ref so the /sessions extension can reach the multiplexer runtime.
+	const muxRuntimeRef: { current: MultiplexerRuntime | null } = { current: null };
 	const trustPromptMode: AppMode = parsed.help || parsed.listModels !== undefined ? "print" : appMode;
 	const projectTrustByCwd = new Map<string, boolean>();
 
@@ -773,7 +789,9 @@ export async function main(args: string[], options?: MainOptions) {
 				noContextFiles: parsed.noContextFiles,
 				systemPrompt: parsed.systemPrompt,
 				appendSystemPrompt: parsed.appendSystemPrompt,
-				extensionFactories,
+				extensionFactories: parsed.multiplex
+					? [...extensionFactories, createSessionsExtension(muxRuntimeRef)]
+					: extensionFactories,
 			},
 		});
 		const { settingsManager, modelRuntime, resourceLoader } = services;
@@ -840,11 +858,23 @@ export async function main(args: string[], options?: MainOptions) {
 		};
 	};
 	time("createRuntime");
-	const runtime = await createAgentSessionRuntime(createRuntime, {
-		cwd: sessionManager.getCwd(),
-		agentDir,
-		sessionManager,
-	});
+	const runtime: AgentSessionRuntime = parsed.multiplex
+		? await (async () => {
+				const initial = await createRuntime({
+					cwd: sessionManager.getCwd(),
+					agentDir,
+					sessionManager,
+				});
+				const mux = new MultiplexerRuntime(initial, createRuntime, sessionManager);
+				muxRuntimeRef.current = mux;
+				return mux;
+			})()
+		: await createAgentSessionRuntime(createRuntime, {
+				cwd: sessionManager.getCwd(),
+				agentDir,
+				sessionManager,
+			});
+	devRuntimeRef.current = runtime;
 	time("createAgentSessionRuntime");
 	const { services, session, modelFallbackMessage } = runtime;
 	const { settingsManager, modelRuntime, resourceLoader } = services;
@@ -874,6 +904,11 @@ export async function main(args: string[], options?: MainOptions) {
 		}
 	}
 	time("readPipedStdin");
+
+	// The app mode is final from here on (the stdin read above can still flip
+	// interactive -> print). /restart uses this to only attempt the exit-code-42
+	// relaunch in interactive mode, which is the only mode that honors it.
+	devRuntimeRef.mode = appMode;
 
 	const { initialMessage, initialImages } = await prepareInitialMessage(
 		parsed,
