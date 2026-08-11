@@ -33,7 +33,11 @@ import { createProjectTrustContext } from "./cli/project-trust.ts";
 import { selectSession } from "./cli/session-picker.ts";
 import { shouldRunFirstTimeSetup, showFirstTimeSetup, showStartupSelector } from "./cli/startup-ui.ts";
 import { APP_NAME, ENV_SESSION_DIR, expandTildePath, getAgentDir, getPackageDir, VERSION } from "./config.ts";
-import { type CreateAgentSessionRuntimeFactory, createAgentSessionRuntime } from "./core/agent-session-runtime.ts";
+import {
+	type AgentSessionRuntime,
+	type CreateAgentSessionRuntimeFactory,
+	createAgentSessionRuntime,
+} from "./core/agent-session-runtime.ts";
 import {
 	type AgentSessionRuntimeDiagnostic,
 	createAgentSessionFromServices,
@@ -64,6 +68,8 @@ import { runMigrations, showDeprecationWarnings } from "./migrations.ts";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.ts";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.ts";
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.ts";
+import { MultiplexerRuntime } from "./pi-mux/multiplexer-runtime.ts";
+import { createSessionsExtension } from "./pi-mux/sessions-extension.ts";
 import { isLocalPath, normalizePath, resolvePath } from "./utils/paths.ts";
 import { cleanupWindowsSelfUpdateQuarantine } from "./utils/windows-self-update.ts";
 
@@ -705,6 +711,8 @@ export async function main(args: string[], options?: MainOptions) {
 		parsed.projectTrustOverride === undefined && !hasTrustRequiringProjectResources(sessionCwd)
 			? sessionCwd
 			: undefined;
+	// pi-mux: mutable ref so the /sessions extension can reach the multiplexer runtime.
+	const muxRuntimeRef: { current: MultiplexerRuntime | null } = { current: null };
 	const trustPromptMode: AppMode = parsed.help || parsed.listModels !== undefined ? "print" : appMode;
 	const projectTrustByCwd = new Map<string, boolean>();
 
@@ -773,7 +781,9 @@ export async function main(args: string[], options?: MainOptions) {
 				noContextFiles: parsed.noContextFiles,
 				systemPrompt: parsed.systemPrompt,
 				appendSystemPrompt: parsed.appendSystemPrompt,
-				extensionFactories,
+				extensionFactories: parsed.multiplex
+					? [...extensionFactories, createSessionsExtension(muxRuntimeRef)]
+					: extensionFactories,
 			},
 		});
 		const { settingsManager, modelRuntime, resourceLoader } = services;
@@ -840,11 +850,22 @@ export async function main(args: string[], options?: MainOptions) {
 		};
 	};
 	time("createRuntime");
-	const runtime = await createAgentSessionRuntime(createRuntime, {
-		cwd: sessionManager.getCwd(),
-		agentDir,
-		sessionManager,
-	});
+	const runtime: AgentSessionRuntime = parsed.multiplex
+		? await (async () => {
+				const initial = await createRuntime({
+					cwd: sessionManager.getCwd(),
+					agentDir,
+					sessionManager,
+				});
+				const mux = new MultiplexerRuntime(initial, createRuntime, sessionManager);
+				muxRuntimeRef.current = mux;
+				return mux;
+			})()
+		: await createAgentSessionRuntime(createRuntime, {
+				cwd: sessionManager.getCwd(),
+				agentDir,
+				sessionManager,
+			});
 	time("createAgentSessionRuntime");
 	const { services, session, modelFallbackMessage } = runtime;
 	const { settingsManager, modelRuntime, resourceLoader } = services;

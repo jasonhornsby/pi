@@ -24,6 +24,7 @@ export interface Args {
 	mode?: Mode;
 	name?: string;
 	noSession?: boolean;
+	multiplex?: boolean;
 	session?: string;
 	sessionId?: string;
 	fork?: string;
@@ -105,6 +106,8 @@ export function parseArgs(args: string[]): Args {
 			}
 		} else if (arg === "--no-session") {
 			result.noSession = true;
+		} else if (arg === "--multiplex") {
+			result.multiplex = true;
 		} else if (arg === "--session" && i + 1 < args.length) {
 			result.session = args[++i];
 		} else if (arg === "--session-id" && i + 1 < args.length) {
@@ -266,6 +269,7 @@ ${chalk.bold("Options:")}
   --fork <path|id>               Fork specific session file or partial UUID into a new session
   --session-dir <dir>            Directory for session storage and lookup
   --no-session                   Don't save session (ephemeral)
+  --multiplex                    Run multiple sessions in parallel (one tab per session, experimental)
   --name, -n <name>              Set session display name
   --models <patterns>            Comma-separated model patterns for Ctrl+P cycling
                                  Supports globs (anthropic/*, *sonnet*) and fuzzy matching

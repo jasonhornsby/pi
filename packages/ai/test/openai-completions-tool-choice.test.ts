@@ -1407,7 +1407,11 @@ describe("openai-completions tool_choice", () => {
 
 		for (const model of cases) {
 			let payload: unknown;
-			expect(model.compat?.maxTokensField).toBe("max_tokens");
+			// maxTokensField only exists on completions compat types; narrow the
+			// union before reading it.
+			const maxTokensField =
+				model.compat && "maxTokensField" in model.compat ? model.compat.maxTokensField : undefined;
+			expect(maxTokensField).toBe("max_tokens");
 
 			await streamSimple(
 				model,
