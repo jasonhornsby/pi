@@ -1403,7 +1403,7 @@ describe("openai-completions tool_choice", () => {
 	});
 
 	it("sends max_tokens for OpenCode completions models", async () => {
-		const cases = [getModel("opencode-go", "kimi-k2.6")!, getModel("opencode", "grok-build-0.1")!] as const;
+		const cases = [getModel("opencode-go", "kimi-k2.6")!, getModel("opencode", "kimi-k2.6")!] as const;
 
 		for (const model of cases) {
 			let payload: unknown;
@@ -1412,6 +1412,47 @@ describe("openai-completions tool_choice", () => {
 			const maxTokensField =
 				model.compat && "maxTokensField" in model.compat ? model.compat.maxTokensField : undefined;
 			expect(maxTokensField).toBe("max_tokens");
+
+			await streamSimple(
+				model,
+				{
+					messages: [{ role: "user", content: "Hi", timestamp: Date.now() }],
+				},
+				{
+					apiKey: "test",
+					maxTokens: 123,
+					onPayload: (params: unknown) => {
+						payload = params;
+					},
+				},
+			).result();
+
+			const params = (payload ?? mockState.lastParams) as { max_tokens?: number; max_completion_tokens?: number };
+			expect(params.max_tokens).toBe(123);
+			expect(params.max_completion_tokens).toBeUndefined();
+		}
+	});
+
+	it("sends max_tokens for built-in and custom DeepSeek API models", async () => {
+		const customModel = {
+			...localOpenAICompletionsModel,
+			id: "custom-deepseek-model",
+			name: "Custom DeepSeek Model",
+			provider: "custom-deepseek",
+			baseUrl: "https://api.deepseek.com",
+		} satisfies Model<"openai-completions">;
+		const nativeModels = [
+			getModel("deepseek", "deepseek-v4-flash")!,
+			getModel("deepseek", "deepseek-v4-pro")!,
+		] as const;
+		const cases = [...nativeModels, customModel] as const;
+
+		for (const model of nativeModels) {
+			expect(model.compat?.maxTokensField).toBe("max_tokens");
+		}
+
+		for (const model of cases) {
+			let payload: unknown;
 
 			await streamSimple(
 				model,
